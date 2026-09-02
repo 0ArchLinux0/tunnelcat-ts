@@ -203,11 +203,13 @@ jobs:
           BIN="bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }}"
           MAGIC=$(head -c 4 "$BIN" | od -An -tx1 | tr -d ' \n')
           if [[ "$MAGIC" == "7f454c46" ]]; then
-            # ELF (linux). e_machine at offset 18-19.
+            # ELF (linux). e_machine at offset 18-19, little-endian.
+            # x86_64 e_machine = 0x003E (stored as 3e 00)
+            # aarch64 e_machine = 0x00B7 (stored as b7 00)
             E_MACHINE=$(head -c 20 "$BIN" | tail -c 2 | od -An -tx1 | tr -d ' \n')
             case "$E_MACHINE" in
-              3e) ARCH="x86_64" ;;
-              b7) ARCH="aarch64" ;;
+              3e00) ARCH="x86_64" ;;
+              b700) ARCH="aarch64" ;;
               *)  echo "::error::unknown ELF e_machine: $E_MACHINE"; exit 1 ;;
             esac
             echo "✓ ELF binary, e_machine=$ARCH"
