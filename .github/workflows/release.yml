@@ -1,0 +1,60 @@
+# GitHub Actions release workflow for tunnelcat-ts.
+#
+# Triggered on tag push (v*). Runs the test suite, then
+# builds the npm pack and uploads it as a release asset.
+#
+# The user typically cuts a release by:
+#   git tag v0.2.0
+#   git push --tags
+# and waits ~5 minutes for this workflow to publish the
+# tarball.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build + publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: Run tests
+        env:
+          TUNNELCAT_GO_REPO: ${{ github.workspace }}/go-src
+        run: |
+          # Set up the Go repo first (needed for the wire interop test).
+          git clone --depth 1 --branch main https://github.com/0ArchLinux0/tunnelcat.git go-src
+          cd go-src
+          cargo build --release --manifest-path crates/tunnelcat-proto/Cargo.toml
+          go build -o ../bin/tunnelcat-helper ./cmd/tunnelcat
+          cd ..
+          npm run test:integration
+
+      - name: Build the npm pack
+        run: npm pack
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tunnelcat-*.tgz
+          fail_on_unmatched_files: false
+          generate_release_notes: true
