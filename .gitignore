@@ -1,0 +1,16 @@
+# Node
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# npm
+.npm/
+*.tgz
+
+# TypeScript build
+*.tsbuildinfo
+
+# Helper binary (built locally for dev; downloaded as optionalDep for install)
+bin/tunnelcat-helper
+bin/tunnelcat-helper.exe

@@ -1,0 +1,33 @@
+{
+  "name": "tunnelcat",
+  "version": "0.1.0",
+  "description": "1:1 mesh tunnel that ships fast. TypeScript CLI + bundled Go data plane.",
+  "type": "module",
+  "bin": {
+    "tunnelcat": "./bin/tunnelcat.js"
+  },
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test --import tsx ./test/**/*.test.ts",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md"
+  ]
+}
