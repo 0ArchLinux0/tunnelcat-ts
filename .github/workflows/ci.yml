@@ -212,11 +212,13 @@ jobs:
             esac
             echo "✓ ELF binary, e_machine=$ARCH"
           elif [[ "$MAGIC" == "cffaedfe" || "$MAGIC" == "cefaedfe" ]]; then
-            # Mach-O (darwin). cputype at offset 4-7.
+            # Mach-O (darwin). cputype at offset 4-7, little-endian.
+            # x86_64 cputype = 0x01000007 (stored as 07 00 00 01)
+            # arm64  cputype = 0x0100000C (stored as 0c 00 00 01)
             CPUTYPE=$(head -c 8 "$BIN" | tail -c 4 | od -An -tx1 | tr -d ' \n')
             case "$CPUTYPE" in
-              01000007) ARCH="x86_64" ;;
-              0100000c) ARCH="arm64"  ;;
+              07000001) ARCH="x86_64" ;;
+              0c000001) ARCH="arm64"  ;;
               *)  echo "::error::unknown Mach-O cputype: $CPUTYPE"; exit 1 ;;
             esac
             echo "✓ Mach-O binary, cputype=$ARCH"
