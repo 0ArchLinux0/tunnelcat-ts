@@ -9,7 +9,9 @@
   "main": "./src/index.ts",
   "scripts": {
     "build": "tsc",
-    "test": "node --test --import tsx ./test/**/*.test.ts",
+    "test": "node --test --import tsx \"test/**/*.test.ts\"",
+    "test:unit": "node --test --import tsx test/argv.test.ts test/installpath.test.ts test/identity.test.ts test/contacts.test.ts",
+    "test:integration": "node --test --import tsx test/integration/wireinterop.test.ts",
     "lint": "tsc --noEmit"
   },
   "engines": {
