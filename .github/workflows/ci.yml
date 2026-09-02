@@ -193,14 +193,29 @@ jobs:
           ls -la bin/
           file bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }} 2>/dev/null || true
 
-      - name: Run helper --help
-        # For linux targets, this works directly. For darwin
-          # targets, the binary is darwin-format and won't run
-          # on the ubuntu runner, so we skip the actual run.
+      - name: Verify the binary format matches the target
+        # We can't run the cross-built arm64 or darwin binary
+        # on the linux CI runner (different arch). We use
+        # `file` to verify the architecture is correct.
         run: |
-          if [[ "${{ matrix.target.os }}" == "linux" ]]; then
-            bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }} --help
-          else
-            echo "skipping run: ${{ matrix.target.os }} binary won't run on linux runner"
-            file bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }}
+          ARCH=$(file bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }} 2>/dev/null | grep -oE 'aarch64|x86_64|arm64' | head -1)
+          if [[ -z "$ARCH" ]]; then
+            echo "::error::binary format not recognized"
+            exit 1
           fi
+          echo "✓ binary architecture: $ARCH"
+          # Map the binary's reported arch to the matrix arch.
+          if [[ "${{ matrix.target.arch }}" == "amd64" && "$ARCH" == "x86_64" ]]; then
+            echo "✓ amd64 binary verified"
+          elif [[ "${{ matrix.target.arch }}" == "arm64" && ("$ARCH" == "aarch64" || "$ARCH" == "arm64") ]]; then
+            echo "✓ arm64 binary verified"
+          else
+            echo "::error::arch mismatch: expected ${{ matrix.target.arch }}, got $ARCH"
+            exit 1
+          fi
+
+      - name: Run helper --help (linux only)
+        # For linux/amd64 only — the linux/arm64 and darwin
+        # binaries can't run on the linux CI runner.
+        if: matrix.target.os == 'linux' && matrix.target.arch == 'amd64'
+        run: bin/tunnelcat-helper-linux-amd64 --help
