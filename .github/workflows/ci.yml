@@ -1,0 +1,148 @@
+# GitHub Actions CI for tunnelcat-ts.
+#
+# On every push to main, and on every PR:
+#   1. Build the Go helper for 4 platforms (from the parked
+#      Go repo at 0ArchLinux0/tunnelcat)
+#   2. Run the TS unit + integration tests
+#   3. Run the wire interop test (M0.7 gate)
+#
+# The wire interop test is the M0.7 gate. The cross-build is
+# the M1.13 gate.
+
+name: ci
+
+on:
+  push:
+    branches: [main, "sess-*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The Go repo is at 0ArchLinux0/tunnelcat (parked). We clone
+# it into ./go-src/ for the build steps. This is not a
+# submodule (faster, simpler) — the Go repo is treated as a
+# release-time dependency.
+env:
+  GO_REPO_URL: "https://github.com/0ArchLinux0/tunnelcat.git"
+  GO_REPO_REF: "main"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Job 1: TS unit tests. Fast (< 1 min).
+  # ─────────────────────────────────────────────────────────────
+  ts-unit:
+    name: ts (unit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm run test:unit
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 2: Wire interop. The M0.7 gate.
+  #
+  # Clones the Go repo, builds the helper, then runs the
+  # wire interop test using the freshly built helper.
+  # ─────────────────────────────────────────────────────────────
+  wire-interop:
+    name: wire interop (M0.7 gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Clone the Go repo
+        run: git clone --depth 1 --branch "$GO_REPO_REF" "$GO_REPO_URL" go-src
+
+      - name: Build the Rust crate
+        working-directory: go-src/crates/tunnelcat-proto
+        run: cargo build --release
+
+      - name: Build the helper
+        working-directory: go-src
+        run: go build -o ../bin/tunnelcat-helper ./cmd/tunnelcat
+
+      - name: Run wire interop test
+        env:
+          TUNNELCAT_GO_REPO: ${{ github.workspace }}/go-src
+        run: npm run test:integration
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 3: Cross-build the helper for 4 platforms.
+  # The M1.13 gate.
+  # ─────────────────────────────────────────────────────────────
+  cross-build:
+    name: cross-build (${{ matrix.target.os }}/${{ matrix.target.arch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { os: darwin,  arch: amd64 }
+          - { os: darwin,  arch: arm64 }
+          - { os: linux,   arch: amd64 }
+          - { os: linux,   arch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: true
+
+      - name: Clone the Go repo
+        run: git clone --depth 1 --branch "$GO_REPO_REF" "$GO_REPO_URL" go-src
+
+      - name: Build the helper (non-cgo)
+        working-directory: go-src
+        env:
+          GOOS:   ${{ matrix.target.os }}
+          GOARCH: ${{ matrix.target.arch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p ${{ github.workspace }}/dist/cross-build
+          go build -o ${{ github.workspace }}/dist/cross-build/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }} ./cmd/tunnelcat
+          ls -la ${{ github.workspace }}/dist/cross-build/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helper-${{ matrix.target.os }}-${{ matrix.target.arch }}
+          path: dist/cross-build/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }}
