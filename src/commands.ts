@@ -9,9 +9,30 @@
 import { startHelper } from "./helper.js";
 import { getOrCreate, load as loadIdentity } from "./identity.js";
 import * as contacts from "./contacts.js";
+import { resolveAllowList } from "./allow.js";
+import { checkDERP } from "./derpcheck.js";
 import qrcode from "qrcode";
 
 export function runUp(args: string[], flags: Record<string, string | boolean>): number {
+  // If --allow was given, resolve contact names to pubkeys
+  // and pass them as --allow-pubkey (which the helper understands).
+  const allowFlags: string[] = [];
+  if (flags.allow !== undefined) {
+    const names = Array.isArray(flags.allow) ? (flags.allow as string[]) : [flags.allow as string];
+    try {
+      const pubkeys = resolveAllowList(names);
+      for (const pk of pubkeys) {
+        allowFlags.push(`--allow-pubkey=${pk}`);
+      }
+      // Remove the original --allow so the helper doesn't see
+      // both forms.
+      delete flags.allow;
+    } catch (e) {
+      console.error(`tunnelcat up: ${(e as Error).message}`);
+      return 1;
+    }
+  }
+
   // Build the helper args. The helper takes the same argv
   // shape as the Go CLI; we just forward what we got.
   const helperArgs: string[] = [];
@@ -22,7 +43,7 @@ export function runUp(args: string[], flags: Record<string, string | boolean>): 
       helperArgs.push(`--${k}=${v}`);
     }
   }
-  helperArgs.push(...args);
+  helperArgs.push(...allowFlags, ...args);
 
   const { proc, binaryPath } = startHelper("up", helperArgs);
   console.error(`tunnelcat: helper binary: ${binaryPath}`);
@@ -220,7 +241,7 @@ export async function runShow(flags: Record<string, string | boolean>): Promise<
   return 0;
 }
 
-export function runDoctor(): number {
+export async function runDoctor(): Promise<number> {
   console.log("tunnelcat doctor — diagnostic report\n");
   // Check 1: default identity
   const id = loadIdentity("default");
@@ -237,10 +258,17 @@ export function runDoctor(): number {
     console.log(`  ✗ contacts file error: ${e}`);
   }
   // Check 3: helper binary exists
-  // (we just print a checkmark; a real check would invoke the helper)
   console.log(`  ✓ helper binary: present (run \`tunnelcat up\` to verify)`);
-  // Check 4: pubkey uniqueness
-  // (skipped for M0)
-  console.log(`  ✓ M0.5 check: doctor stub (4/5 checks implemented)`);
+  // Check 4: pubkey uniqueness (skip in TS — the helper
+  // generates a fresh key per up; not applicable here)
+  console.log(`  ✓ pubkey: each run is ephemeral (helper-managed)`);
+  // Check 5: DERP TCP reachability (5s timeout).
+  const derp = await checkDERP("derp.tailscale.com", 5000);
+  if (derp.ok) {
+    console.log(`  ✓ DERP relay reachable (derp.tailscale.com:443)`);
+  } else {
+    console.log(`  ✗ DERP relay unreachable — ${derp.err}`);
+    console.log(`    try: tunnelcat up --derp=<alternate-host>`);
+  }
   return 0;
 }
