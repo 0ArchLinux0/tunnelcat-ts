@@ -195,16 +195,35 @@ jobs:
 
       - name: Verify the binary format matches the target
         # We can't run the cross-built arm64 or darwin binary
-        # on the linux CI runner (different arch). We use
-        # `file` to verify the architecture is correct.
+        # on the linux CI runner (different arch). Instead, we
+        # inspect the ELF/Mach-O header directly.
+        #   - ELF: e_machine at offset 18 is 0x3E (x86_64) or 0xB7 (aarch64)
+        #   - Mach-O: cputype at offset 4 is 0x01000007 (x86_64) or 0x0100000C (arm64)
         run: |
-          ARCH=$(file bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }} 2>/dev/null | grep -oE 'aarch64|x86_64|arm64' | head -1)
-          if [[ -z "$ARCH" ]]; then
-            echo "::error::binary format not recognized"
-            exit 1
+          BIN="bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }}"
+          MAGIC=$(head -c 4 "$BIN" | od -An -tx1 | tr -d ' \n')
+          if [[ "$MAGIC" == "7f454c46" ]]; then
+            # ELF (linux). e_machine at offset 18-19.
+            E_MACHINE=$(head -c 20 "$BIN" | tail -c 2 | od -An -tx1 | tr -d ' \n')
+            case "$E_MACHINE" in
+              3e) ARCH="x86_64" ;;
+              b7) ARCH="aarch64" ;;
+              *)  echo "::error::unknown ELF e_machine: $E_MACHINE"; exit 1 ;;
+            esac
+            echo "✓ ELF binary, e_machine=$ARCH"
+          elif [[ "$MAGIC" == "cffaedfe" || "$MAGIC" == "cefaedfe" ]]; then
+            # Mach-O (darwin). cputype at offset 4-7.
+            CPUTYPE=$(head -c 8 "$BIN" | tail -c 4 | od -An -tx1 | tr -d ' \n')
+            case "$CPUTYPE" in
+              01000007) ARCH="x86_64" ;;
+              0100000c) ARCH="arm64"  ;;
+              *)  echo "::error::unknown Mach-O cputype: $CPUTYPE"; exit 1 ;;
+            esac
+            echo "✓ Mach-O binary, cputype=$ARCH"
+          else
+            echo "::error::unknown binary format, magic=$MAGIC"; exit 1
           fi
-          echo "✓ binary architecture: $ARCH"
-          # Map the binary's reported arch to the matrix arch.
+          # Map binary arch to expected arch.
           if [[ "${{ matrix.target.arch }}" == "amd64" && "$ARCH" == "x86_64" ]]; then
             echo "✓ amd64 binary verified"
           elif [[ "${{ matrix.target.arch }}" == "arm64" && ("$ARCH" == "aarch64" || "$ARCH" == "arm64") ]]; then
