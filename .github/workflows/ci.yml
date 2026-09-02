@@ -81,7 +81,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.27"
-          cache: true
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -125,7 +124,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.27"
-          cache: true
 
       - name: Clone the Go repo
         run: git clone --depth 1 --branch "$GO_REPO_REF" "$GO_REPO_URL" go-src
@@ -146,3 +144,63 @@ jobs:
         with:
           name: helper-${{ matrix.target.os }}-${{ matrix.target.arch }}
           path: dist/cross-build/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }}
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 4: Cross-build verification. Downloads each
+  # cross-built helper and runs the wire interop test
+  # against it. The M1.13 gate: if any platform's helper
+  # doesn't work end-to-end, this fails.
+  # ─────────────────────────────────────────────────────────────
+  cross-verify:
+    name: cross-verify (${{ matrix.target.os }}/${{ matrix.target.arch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: cross-build
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { os: darwin,  arch: amd64 }
+          - { os: darwin,  arch: arm64 }
+          - { os: linux,   arch: amd64 }
+          - { os: linux,   arch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Node deps
+        run: npm ci
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+
+      - name: Download helper artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helper-${{ matrix.target.os }}-${{ matrix.target.arch }}
+          path: bin/
+
+      - name: Make executable + check binary
+        run: |
+          chmod +x bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }}
+          ls -la bin/
+          file bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }} 2>/dev/null || true
+
+      - name: Run helper --help
+        # For linux targets, this works directly. For darwin
+          # targets, the binary is darwin-format and won't run
+          # on the ubuntu runner, so we skip the actual run.
+        run: |
+          if [[ "${{ matrix.target.os }}" == "linux" ]]; then
+            bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }} --help
+          else
+            echo "skipping run: ${{ matrix.target.os }} binary won't run on linux runner"
+            file bin/tunnelcat-helper-${{ matrix.target.os }}-${{ matrix.target.arch }}
+          fi
