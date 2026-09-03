@@ -14,3 +14,4 @@ dist/
 # Helper binary (built locally for dev; downloaded as optionalDep for install)
 bin/tunnelcat-helper
 bin/tunnelcat-helper.exe
+bin/tunnelcat-helper-windows*
