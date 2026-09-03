@@ -15,3 +15,12 @@ dist/
 bin/tunnelcat-helper
 bin/tunnelcat-helper.exe
 bin/tunnelcat-helper-windows*
+
+# Cross-built helper binaries (built locally for development;
+# rebuilt in CI for each platform)
+bin/tunnelcat-helper-linux-amd64
+bin/tunnelcat-helper-linux-arm64
+bin/tunnelcat-helper-darwin-amd64
+bin/tunnelcat-helper-darwin-arm64
+bin/tunnelcat-helper-windows-amd64.exe
+bin/tunnelcat-helper-windows-arm64.exe
