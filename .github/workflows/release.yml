@@ -49,6 +49,15 @@ jobs:
           cd ..
           npm run test:integration
 
+      - name: Build TypeScript
+        # Required before npm pack: the package's `files` field
+        # includes dist/ but dist/ doesn't exist until we run
+        # the build. Without this step, the published tarball
+        # is missing the JS that the bin/tunnelcat.js loader
+        # requires, and `npm install -g <tarball>` produces a
+        # broken CLI that errors with "cannot find dist/index.js".
+        run: npm run build
+
       - name: Build the npm pack
         run: npm pack
 
