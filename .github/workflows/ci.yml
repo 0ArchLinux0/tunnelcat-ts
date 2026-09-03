@@ -99,7 +99,14 @@ jobs:
       - name: Run wire interop test
         env:
           TUNNELCAT_GO_REPO: ${{ github.workspace }}/go-src
-        run: npm run test:integration
+        run: |
+          # Build TypeScript so the freshinstall test's
+          # `npm pack` produces a tarball that includes
+          # dist/. Without this, the published tarball is
+          # missing the JS that the bin/tunnelcat.js loader
+          # needs.
+          npm run build
+          npm run test:integration
 
   # ─────────────────────────────────────────────────────────────
   # Job 3: Cross-build the helper for 4 platforms.
