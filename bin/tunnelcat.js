@@ -5,14 +5,17 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dist = join(__dirname, "..", "dist", "index.js");
+const distUrl = pathToFileURL(dist).href;
 const src = join(__dirname, "..", "src", "index.ts");
 
 if (existsSync(dist)) {
-  const mod = await import(dist);
+  // Use a file:// URL on Windows: bare "c:" paths fail
+  // dynamic import with ERR_UNSUPPORTED_ESM_URL_SCHEME.
+  const mod = await import(distUrl);
   const rc = mod.main(process.argv.slice(2));
   if (rc instanceof Promise) {
     rc.then((code) => process.exit(code));

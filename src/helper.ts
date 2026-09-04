@@ -35,11 +35,19 @@ function platformPackage(): string {
 }
 
 function findHelperBinary(): string {
-  // 1. Look in the local bin/ (dev mode: ./bin/tunnelcat-helper).
-  const devPath = join(__dirname, "..", "..", "bin", "tunnelcat-helper");
+  // 1. Look in the local bin/ (when the helper is in the
+  //    same package as the dist/). __dirname is dist/;
+  //    the helper is in ../bin/ (one level up from dist).
+  //    The previous "..", ".." path was wrong: it went up TWO
+  //    levels, ending up at the parent of the package
+  //    (e.g. lib/node_modules/) instead of inside the package.
+  const devPath = join(__dirname, "..", "bin", process.platform === "win32" ? "tunnelcat-helper.exe" : "tunnelcat-helper");
   if (existsSync(devPath)) return devPath;
 
   // 2. Look in node_modules (npm install: bundled per-platform optionalDep).
+  //    The package layout is:
+  //      <prefix>/node_modules/@scope/tunnelcat-helper-<plat>/bin/helper
+  //    From dist/, that's ../../@scope/tunnelcat-helper-<plat>/bin/...
   const pkg = platformPackage();
   const candidates = [
     join(__dirname, "..", "..", pkg, "bin", process.platform === "win32" ? "tunnelcat-helper.exe" : "tunnelcat-helper"),
@@ -50,7 +58,7 @@ function findHelperBinary(): string {
   }
 
   // 3. Fall back to PATH (system install).
-  return "tunnelcat-helper";
+  return process.platform === "win32" ? "tunnelcat-helper.exe" : "tunnelcat-helper";
 }
 
 export type HelperHandle = {

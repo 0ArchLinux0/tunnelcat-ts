@@ -13,7 +13,7 @@ import { resolveAllowList } from "./allow.js";
 import { checkDERP } from "./derpcheck.js";
 import qrcode from "qrcode";
 
-export function runUp(args: string[], flags: Record<string, string | boolean>): number {
+export function runUp(args: string[], flags: Record<string, string | boolean>): number | Promise<number> {
   // If --allow was given, resolve contact names to pubkeys
   // and pass them as --allow-pubkey (which the helper understands).
   const allowFlags: string[] = [];
@@ -53,11 +53,17 @@ export function runUp(args: string[], flags: Record<string, string | boolean>): 
   proc.stderr!.pipe(process.stderr);
   process.stdin.pipe(proc.stdin!);
 
-  proc.on("exit", (code) => process.exit(code ?? 0));
-  process.on("SIGINT", () => proc.kill("SIGINT"));
-  process.on("SIGTERM", () => proc.kill("SIGTERM"));
-
-  return 0;
+  // Return a promise that resolves when the helper exits. The
+  // TS process must stay alive while the helper is running;
+  // returning a number here would cause the caller to call
+  // process.exit(0), which would SIGHUP the helper and kill it.
+  return new Promise<number>((resolve) => {
+    proc.on("exit", (code) => {
+      resolve(code ?? 0);
+    });
+    process.on("SIGINT", () => proc.kill("SIGINT"));
+    process.on("SIGTERM", () => proc.kill("SIGTERM"));
+  });
 }
 
 export function runDial(args: string[], flags: Record<string, string | boolean>): number {
