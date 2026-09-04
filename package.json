@@ -1,6 +1,6 @@
 {
   "name": "tunnelcat",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "1:1 mesh tunnel that ships fast. TypeScript CLI + bundled Go data plane.",
   "type": "module",
   "bin": {
