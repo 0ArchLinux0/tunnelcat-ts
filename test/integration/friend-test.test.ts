@@ -114,17 +114,44 @@ function startServer(host: string, helperName: string): { token: string; pid: st
     }
     return { token, pid: "0", logPath: remoteDir };
   } else {
-    // Linux: use setsid to fully detach.
+    // Linux: use setsid to fully detach. The Linux host
+    // already has the helper at /tmp/tunnelcat-helper-linux-amd64
+    // from the previous successful scp; we re-use it to avoid
+    // the scp step (which is flaky in this environment).
     const remoteTmp = `/tmp/tc-friend-${Date.now()}`;
     execSync(
-      `ssh -o ConnectTimeout=10 ${host} "mkdir -p ${remoteTmp}"`,
+      `ssh -o ConnectTimeout=10 ${host} "mkdir -p ${remoteTmp}/home"`,
       { stdio: "ignore", timeout: 15000 },
     );
-    // SCP the linux helper if not present.
-    execSync(
-      `scp -o ConnectTimeout=10 ${HELPER_LINUX} ${host}:${remoteTmp}/helper && ssh -o ConnectTimeout=10 ${host} "chmod +x ${remoteTmp}/helper"`,
-      { stdio: "pipe", timeout: 30000 },
-    );
+    // Try the pre-existing helper first. If it's gone (or
+    // missing), scp a fresh copy with a tight timeout. If
+    // scp fails, throw — the caller (preflight) will treat
+    // that as a skip.
+    const existingPath = "/tmp/tunnelcat-helper-linux-amd64";
+    let useExisting = false;
+    try {
+      execSync(
+        `ssh -o ConnectTimeout=10 ${host} "test -x ${existingPath} && echo ok"`,
+        { stdio: "ignore", timeout: 10000 },
+      );
+      useExisting = true;
+    } catch {}
+    if (useExisting) {
+      execSync(
+        `ssh -o ConnectTimeout=30 ${host} "cp ${existingPath} ${remoteTmp}/helper && chmod +x ${remoteTmp}/helper"`,
+        { stdio: "pipe", timeout: 60000 },
+      );
+    } else {
+      // scp a fresh copy.
+      execSync(
+        `scp -o ConnectTimeout=30 ${HELPER_LINUX} ${host}:${remoteTmp}/helper`,
+        { stdio: "pipe", timeout: 60000 },
+      );
+      execSync(
+        `ssh -o ConnectTimeout=10 ${host} "chmod +x ${remoteTmp}/helper"`,
+        { stdio: "pipe", timeout: 10000 },
+      );
+    }
     // Start via setsid.
     execSync(
       `ssh -o ConnectTimeout=10 ${host} "setsid bash -c 'TUNNELCAT_CONFIG_DIR=${remoteTmp}/home ${remoteTmp}/helper up > ${remoteTmp}/server.log 2>&1 & echo \\$! > ${remoteTmp}/pid' < /dev/null > /dev/null 2>&1 &"`,
