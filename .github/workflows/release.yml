@@ -37,6 +37,14 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Build TypeScript
+        # Required before test:integration (which runs
+        # freshinstall.test.ts, which does `npm pack` and
+        # installs the resulting tarball). Without this step,
+        # the tarball is missing dist/ and the install test
+        # fails.
+        run: npm run build
+
       - name: Run tests
         env:
           TUNNELCAT_GO_REPO: ${{ github.workspace }}/go-src
@@ -48,15 +56,6 @@ jobs:
           go build -o ../bin/tunnelcat-helper ./cmd/tunnelcat
           cd ..
           npm run test:integration
-
-      - name: Build TypeScript
-        # Required before npm pack: the package's `files` field
-        # includes dist/ but dist/ doesn't exist until we run
-        # the build. Without this step, the published tarball
-        # is missing the JS that the bin/tunnelcat.js loader
-        # requires, and `npm install -g <tarball>` produces a
-        # broken CLI that errors with "cannot find dist/index.js".
-        run: npm run build
 
       - name: Build the npm pack
         run: npm pack
