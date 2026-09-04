@@ -32,7 +32,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..", "..");
 const HELPER_DARWIN = join(REPO_ROOT, "bin", "tunnelcat-helper");
 const HELPER_WINDOWS = join(REPO_ROOT, "bin", "tunnelcat-helper-windows-amd64.exe");
-const WINDOWS_HOST = process.env.TUNNELCAT_WINDOWS_HOST || "window";
+const WINDOWS_HOST = process.env.TUNNELCAT_WINDOWS_HOST || "window-lan";
 
 test("M1.17 cross-platform WINDOWS: darwin server + windows client echo round-trip", { timeout: 180000 }, async () => {
   if (!existsSync(HELPER_WINDOWS)) {
@@ -49,7 +49,7 @@ test("M1.17 cross-platform WINDOWS: darwin server + windows client echo round-tr
   // adds the Windows host to the matrix.
   try {
     execSync(
-      `ssh -o ConnectTimeout=5 -o BatchMode=yes ${WINDOWS_HOST} echo "alive"`,
+      `ssh -o ConnectTimeout=15 -o BatchMode=yes ${WINDOWS_HOST} echo "alive"`,
       { stdio: "ignore", timeout: 10000 },
     );
   } catch {
@@ -60,7 +60,7 @@ test("M1.17 cross-platform WINDOWS: darwin server + windows client echo round-tr
   // Pre-cleanup: kill any leftover helpers on the Windows box.
   try {
     execSync(
-      `ssh -o ConnectTimeout=10 ${WINDOWS_HOST} "taskkill /F /IM tunnelcat-helper-windows-amd64.exe /T 2>nul & exit /b 0"`,
+      `ssh -o ConnectTimeout=30 ${WINDOWS_HOST} "taskkill /F /IM tunnelcat-helper-windows-amd64.exe /T 2>nul & exit /b 0"`,
       { stdio: "ignore", timeout: 20000 },
     );
   } catch {}
@@ -109,14 +109,14 @@ test("M1.17 cross-platform WINDOWS: darwin server + windows client echo round-tr
     const scpRemoteTmp = remoteTmp.replace(/\\/g, "/");
     // mkdir the target dir on the Windows box (idempotent).
     execSync(
-      `ssh -o ConnectTimeout=10 ${WINDOWS_HOST} "cmd /c mkdir ${remoteTmp} 2>nul & exit /b 0"`,
+      `ssh -o ConnectTimeout=30 ${WINDOWS_HOST} "cmd /c mkdir ${remoteTmp} 2>nul & exit /b 0"`,
       { stdio: "ignore", timeout: 15000 },
     );
     // scp the helper binary.
     const winPath = remoteTmp.replace(/\\\\/g, "\\") + "\\tunnelcat-helper.exe";
     const scpWinPath = scpRemoteTmp + "/tunnelcat-helper.exe";
     execSync(
-      `scp -o ConnectTimeout=10 ${HELPER_WINDOWS} ${WINDOWS_HOST}:${scpWinPath}`,
+      `scp -o ConnectTimeout=30 ${HELPER_WINDOWS} ${WINDOWS_HOST}:${scpWinPath}`,
       { stdio: "pipe", timeout: 30000 },
     );
     console.log(`✓ helper copied to ${WINDOWS_HOST}:${winPath}`);
@@ -136,7 +136,7 @@ test("M1.17 cross-platform WINDOWS: darwin server + windows client echo round-tr
     writeFileSync(localBat, batContents, "utf8");
     // scp the bat file to Windows (forward-slash path).
     execSync(
-      `scp -o ConnectTimeout=10 ${localBat} ${WINDOWS_HOST}:${scpBatPath}`,
+      `scp -o ConnectTimeout=30 ${localBat} ${WINDOWS_HOST}:${scpBatPath}`,
       { stdio: "pipe", timeout: 15000 },
     );
     console.log(`> ssh ${WINDOWS_HOST} "cmd /c ${batPath}"`);
@@ -158,7 +158,7 @@ test("M1.17 cross-platform WINDOWS: darwin server + windows client echo round-tr
 
     // Cleanup the remote tmp dir.
     try {
-      execSync(`ssh -o ConnectTimeout=10 ${WINDOWS_HOST} "cmd /c rmdir /S /Q ${remoteTmp} 2>nul & exit /b 0"`, { stdio: "ignore", timeout: 15000 });
+      execSync(`ssh -o ConnectTimeout=30 ${WINDOWS_HOST} "cmd /c rmdir /S /Q ${remoteTmp} 2>nul & exit /b 0"`, { stdio: "ignore", timeout: 15000 });
     } catch {}
   } finally {
     server.kill("SIGTERM");

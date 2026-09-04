@@ -37,7 +37,7 @@ const HELPER_DARWIN = join(REPO_ROOT, "bin", "tunnelcat-helper");
 const HELPER_LINUX = join(REPO_ROOT, "bin", "tunnelcat-helper-linux-amd64");
 const HELPER_WINDOWS = join(REPO_ROOT, "bin", "tunnelcat-helper-windows-amd64.exe");
 const LINUX_HOST = process.env.TUNNELCAT_LINUX_HOST || "linux";
-const WINDOWS_HOST = process.env.TUNNELCAT_WINDOWS_HOST || "window";
+const WINDOWS_HOST = process.env.TUNNELCAT_WINDOWS_HOST || "window-lan";
 
 // Pre-flight: both helpers must exist on disk; both hosts
 // must be reachable. If any fails, skip rather than fail.
@@ -49,17 +49,17 @@ function preflight(): { ok: true } | { ok: false; reason: string } {
     return { ok: false, reason: `Windows helper not at ${HELPER_WINDOWS}` };
   }
   try {
-    execSync(`ssh -o ConnectTimeout=5 -o BatchMode=yes ${LINUX_HOST} echo "alive"`, {
+    execSync(`ssh -o ConnectTimeout=15 -o BatchMode=yes ${LINUX_HOST} echo "alive"`, {
       stdio: "ignore",
-      timeout: 10000,
+      timeout: 30000,
     });
   } catch {
     return { ok: false, reason: `${LINUX_HOST} unreachable` };
   }
   try {
     execSync(
-      `ssh -o ConnectTimeout=5 -o BatchMode=yes ${WINDOWS_HOST} echo "alive"`,
-      { stdio: "ignore", timeout: 10000 },
+      `ssh -o ConnectTimeout=15 -o BatchMode=yes ${WINDOWS_HOST} echo "alive"`,
+      { stdio: "ignore", timeout: 30000 },
     );
   } catch {
     return { ok: false, reason: `${WINDOWS_HOST} unreachable` };
@@ -75,20 +75,20 @@ function startServer(host: string, helperName: string): { token: string; pid: st
   if (host === WINDOWS_HOST) {
     // Windows: use a unique temp dir on the Windows box.
     const remoteDir = `C:\\Users\\j\\AppData\\Local\\Temp\\tc-friend-${Date.now()}`;
-    execSync(`ssh -o ConnectTimeout=10 ${host} "cmd /c mkdir ${remoteDir} 2>nul & exit /b 0"`, {
+    execSync(`ssh -o ConnectTimeout=30 ${host} "cmd /c mkdir ${remoteDir} 2>nul & exit /b 0"`, {
       stdio: "ignore",
-      timeout: 15000,
+      timeout: 45000,
     });
     const scpPath = remoteDir.replace(/\\/g, "/") + "/helper.exe";
     execSync(
-      `scp -o ConnectTimeout=10 ${HELPER_WINDOWS} ${host}:${scpPath}`,
-      { stdio: "pipe", timeout: 30000 },
+      `scp -o ConnectTimeout=120 ${HELPER_WINDOWS} ${host}:${scpPath}`,
+      { stdio: "pipe", timeout: 60000 },
     );
     // Run the helper synchronously via cmd with output
     // redirected to a log file. The ssh process is
     // backgrounded; when this function returns, the helper
     // is still running on Windows.
-    const cmd = `ssh -o ConnectTimeout=10 ${host} "cmd /c set TUNNELCAT_CONFIG_DIR=${remoteDir}\\config&& cd /d ${remoteDir}&& helper.exe up > ${remoteDir}\\out.log 2>&1"`;
+    const cmd = `ssh -o ConnectTimeout=30 ${host} "cmd /c set TUNNELCAT_CONFIG_DIR=${remoteDir}\\config&& cd /d ${remoteDir}&& helper.exe up > ${remoteDir}\\out.log 2>&1"`;
     const proc = spawn(cmd, { shell: true, stdio: "ignore", detached: true });
     proc.unref();
     // Wait for the token.
@@ -101,8 +101,8 @@ function startServer(host: string, helperName: string): { token: string; pid: st
       execSync(`sleep 1`);
       try {
         const log = execSync(
-          `ssh -o ConnectTimeout=5 ${host} "cmd /c type ${remoteDir}\\out.log 2>nul"`,
-          { stdio: "pipe", timeout: 5000 },
+          `ssh -o ConnectTimeout=15 ${host} "cmd /c type ${remoteDir}\\out.log 2>nul"`,
+          { stdio: "pipe", timeout: 15000 },
         ).toString();
         const m = log.match(/(tc[A-Za-z0-9_-]{30,})/);
         if (m) token = m[1];
@@ -120,7 +120,7 @@ function startServer(host: string, helperName: string): { token: string; pid: st
     // the scp step (which is flaky in this environment).
     const remoteTmp = `/tmp/tc-friend-${Date.now()}`;
     execSync(
-      `ssh -o ConnectTimeout=10 ${host} "mkdir -p ${remoteTmp}/home"`,
+      `ssh -o ConnectTimeout=30 ${host} "mkdir -p ${remoteTmp}/home"`,
       { stdio: "ignore", timeout: 15000 },
     );
     // Try the pre-existing helper first. If it's gone (or
@@ -131,8 +131,8 @@ function startServer(host: string, helperName: string): { token: string; pid: st
     let useExisting = false;
     try {
       execSync(
-        `ssh -o ConnectTimeout=10 ${host} "test -x ${existingPath} && echo ok"`,
-        { stdio: "ignore", timeout: 10000 },
+        `ssh -o ConnectTimeout=30 ${host} "test -x ${existingPath} && echo ok"`,
+        { stdio: "ignore", timeout: 30000 },
       );
       useExisting = true;
     } catch {}
@@ -144,18 +144,18 @@ function startServer(host: string, helperName: string): { token: string; pid: st
     } else {
       // scp a fresh copy.
       execSync(
-        `scp -o ConnectTimeout=30 ${HELPER_LINUX} ${host}:${remoteTmp}/helper`,
+        `scp -o ConnectTimeout=120 ${HELPER_LINUX} ${host}:${remoteTmp}/helper`,
         { stdio: "pipe", timeout: 60000 },
       );
       execSync(
-        `ssh -o ConnectTimeout=10 ${host} "chmod +x ${remoteTmp}/helper"`,
-        { stdio: "pipe", timeout: 10000 },
+        `ssh -o ConnectTimeout=30 ${host} "chmod +x ${remoteTmp}/helper"`,
+        { stdio: "pipe", timeout: 60000 },
       );
     }
     // Start via setsid.
     execSync(
-      `ssh -o ConnectTimeout=10 ${host} "setsid bash -c 'TUNNELCAT_CONFIG_DIR=${remoteTmp}/home ${remoteTmp}/helper up > ${remoteTmp}/server.log 2>&1 & echo \\$! > ${remoteTmp}/pid' < /dev/null > /dev/null 2>&1 &"`,
-      { stdio: "pipe", timeout: 10000 },
+      `ssh -o ConnectTimeout=30 ${host} "setsid bash -c 'TUNNELCAT_CONFIG_DIR=${remoteTmp}/home ${remoteTmp}/helper up > ${remoteTmp}/server.log 2>&1 & echo \\$! > ${remoteTmp}/pid' < /dev/null > /dev/null 2>&1 &"`,
+      { stdio: "pipe", timeout: 60000 },
     );
     // Wait for the token.
     const start = Date.now();
@@ -165,16 +165,16 @@ function startServer(host: string, helperName: string): { token: string; pid: st
       execSync(`sleep 1`);
       try {
         const log = execSync(
-          `ssh -o ConnectTimeout=5 ${host} "cat ${remoteTmp}/server.log 2>/dev/null"`,
-          { stdio: "pipe", timeout: 5000 },
+          `ssh -o ConnectTimeout=15 ${host} "cat ${remoteTmp}/server.log 2>/dev/null"`,
+          { stdio: "pipe", timeout: 15000 },
         ).toString();
         const m = log.match(/(tc[A-Za-z0-9_-]{30,})/);
         if (m) token = m[1];
         if (!pid) {
           try {
             pid = execSync(
-              `ssh -o ConnectTimeout=5 ${host} "cat ${remoteTmp}/pid 2>/dev/null"`,
-              { stdio: "pipe", timeout: 5000 },
+              `ssh -o ConnectTimeout=15 ${host} "cat ${remoteTmp}/pid 2>/dev/null"`,
+              { stdio: "pipe", timeout: 15000 },
             ).toString().trim();
           } catch {}
         }
@@ -191,23 +191,23 @@ function killServer(host: string, pid: string, logPath: string) {
   try {
     if (host === WINDOWS_HOST) {
       execSync(
-        `ssh -o ConnectTimeout=5 ${host} "powershell -NoProfile -Command \\"Stop-Process -Name helper -Force -ErrorAction SilentlyContinue\\""`,
-        { stdio: "ignore", timeout: 10000 },
+        `ssh -o ConnectTimeout=15 ${host} "powershell -NoProfile -Command \\"Stop-Process -Name helper -Force -ErrorAction SilentlyContinue\\""`,
+        { stdio: "ignore", timeout: 30000 },
       );
       execSync(
-        `ssh -o ConnectTimeout=5 ${host} "cmd /c rmdir /S /Q ${logPath} 2>nul & exit /b 0"`,
-        { stdio: "ignore", timeout: 10000 },
+        `ssh -o ConnectTimeout=15 ${host} "cmd /c rmdir /S /Q ${logPath} 2>nul & exit /b 0"`,
+        { stdio: "ignore", timeout: 30000 },
       );
     } else {
       if (pid) {
-        execSync(`ssh -o ConnectTimeout=5 ${host} "kill -9 ${pid} 2>/dev/null"`, {
+        execSync(`ssh -o ConnectTimeout=15 ${host} "kill -9 ${pid} 2>/dev/null"`, {
           stdio: "ignore",
-          timeout: 10000,
+          timeout: 30000,
         });
       }
       execSync(
-        `ssh -o ConnectTimeout=5 ${host} "pkill -9 -f ${logPath}/helper 2>/dev/null; rm -rf ${logPath} 2>/dev/null"`,
-        { stdio: "ignore", timeout: 10000 },
+        `ssh -o ConnectTimeout=15 ${host} "pkill -9 -f ${logPath}/helper 2>/dev/null; rm -rf ${logPath} 2>/dev/null"`,
+        { stdio: "ignore", timeout: 30000 },
       );
     }
   } catch {}
@@ -220,13 +220,13 @@ function dialOnHost(host: string, token: string, marker: string): { success: boo
     const localBat = join(localBatDir, "run.bat");
     const remoteDir = `C:\\Users\\j\\AppData\\Local\\Temp\\tc-friend-dial-${Date.now()}`;
     execSync(
-      `ssh -o ConnectTimeout=10 ${host} "cmd /c mkdir ${remoteDir} 2>nul & exit /b 0"`,
+      `ssh -o ConnectTimeout=30 ${host} "cmd /c mkdir ${remoteDir} 2>nul & exit /b 0"`,
       { stdio: "ignore", timeout: 15000 },
     );
     const scpHelperPath = remoteDir.replace(/\\/g, "/") + "/helper.exe";
     execSync(
-      `scp -o ConnectTimeout=10 ${HELPER_WINDOWS} ${host}:${scpHelperPath}`,
-      { stdio: "pipe", timeout: 30000 },
+      `scp -o ConnectTimeout=120 ${HELPER_WINDOWS} ${host}:${scpHelperPath}`,
+      { stdio: "pipe", timeout: 60000 },
     );
     const batContents = [
       `@echo off`,
@@ -237,17 +237,17 @@ function dialOnHost(host: string, token: string, marker: string): { success: boo
     writeFileSync(localBat, batContents, "utf8");
     const scpBatPath = remoteDir.replace(/\\/g, "/") + "/run.bat";
     execSync(
-      `scp -o ConnectTimeout=10 ${localBat} ${host}:${scpBatPath}`,
+      `scp -o ConnectTimeout=120 ${localBat} ${host}:${scpBatPath}`,
       { stdio: "pipe", timeout: 15000 },
     );
-    const cmd = `ssh -o ConnectTimeout=10 ${host} "cmd /c ${remoteDir}\\run.bat"`;
+    const cmd = `ssh -o ConnectTimeout=30 ${host} "cmd /c ${remoteDir}\\run.bat"`;
     try {
       const out = execSync(cmd, { stdio: "pipe", timeout: 180000 }).toString();
       // Also fetch the log
       try {
         const log = execSync(
-          `ssh -o ConnectTimeout=10 ${host} "cmd /c type ${remoteDir}\\out.log 2>nul"`,
-          { stdio: "pipe", timeout: 10000 },
+          `ssh -o ConnectTimeout=30 ${host} "cmd /c type ${remoteDir}\\out.log 2>nul"`,
+          { stdio: "pipe", timeout: 60000 },
         ).toString();
         return { success: log.includes(marker), output: log };
       } catch {
@@ -259,7 +259,7 @@ function dialOnHost(host: string, token: string, marker: string): { success: boo
     } finally {
       try {
         execSync(
-          `ssh -o ConnectTimeout=5 ${host} "cmd /c rmdir /S /Q ${remoteDir} 2>nul & exit /b 0"`,
+          `ssh -o ConnectTimeout=15 ${host} "cmd /c rmdir /S /Q ${remoteDir} 2>nul & exit /b 0"`,
           { stdio: "ignore",
           timeout: 10000 },
         );
@@ -271,15 +271,15 @@ function dialOnHost(host: string, token: string, marker: string): { success: boo
     const inputPath = join(home, "input");
     const outputPath = join(home, "output");
     writeFileSync(inputPath, marker + "\n", "utf8");
-    const cmd = `ssh -o ConnectTimeout=10 ${host} "TUNNELCAT_CONFIG_DIR=${home} /tmp/tunnelcat-helper-linux-amd64 dial ${token} --port 12345 --timeout=120s < /tmp/tc-friend-input > /tmp/tc-friend-output 2>&1"`;
+    const cmd = `ssh -o ConnectTimeout=30 ${host} "TUNNELCAT_CONFIG_DIR=${home} /tmp/tunnelcat-helper-linux-amd64 dial ${token} --port 12345 --timeout=120s < /tmp/tc-friend-input > /tmp/tc-friend-output 2>&1"`;
     try {
-      execSync(`ssh -o ConnectTimeout=10 ${host} "echo ${marker} > /tmp/tc-friend-input"`, {
-        stdio: "pipe", timeout: 10000,
+      execSync(`ssh -o ConnectTimeout=30 ${host} "echo ${marker} > /tmp/tc-friend-input"`, {
+        stdio: "pipe", timeout: 30000,
       });
       execSync(cmd, { stdio: "pipe", timeout: 180000 });
       const out = execSync(
-        `ssh -o ConnectTimeout=10 ${host} "cat /tmp/tc-friend-output 2>/dev/null"`,
-        { stdio: "pipe", timeout: 10000 },
+        `ssh -o ConnectTimeout=30 ${host} "cat /tmp/tc-friend-output 2>/dev/null"`,
+        { stdio: "pipe", timeout: 60000 },
       ).toString();
       return { success: out.includes(marker), output: out };
     } catch (e: any) {
